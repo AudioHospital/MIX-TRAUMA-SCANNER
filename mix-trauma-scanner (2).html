@@ -1,0 +1,3000 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIX TRAUMA SCANNER — AUDIO HOSPITAL</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&display=swap');
+
+  :root {
+    --blood: #8b0000;
+    --blood-bright: #cc0000;
+    --blood-glow: #ff1111;
+    --steel: #1a1a1a;
+    --steel-light: #2a2a2a;
+    --steel-mid: #333;
+    --metal: #444;
+    --chrome: #aaa;
+    --dim: #666;
+    --faint: #333;
+    --pulse-duration: 2s;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: #000;
+    color: #ccc;
+    font-family: 'Share Tech Mono', monospace;
+    overflow-x: hidden;
+    cursor: crosshair;
+  }
+
+  /* ── SCANLINE OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.15) 2px,
+      rgba(0,0,0,0.15) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+    animation: scanRoll 8s linear infinite;
+  }
+
+  @keyframes scanRoll {
+    0% { background-position: 0 0; }
+    100% { background-position: 0 200px; }
+  }
+
+  /* ── CRT VIGNETTE ── */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.85) 100%);
+    pointer-events: none;
+    z-index: 9998;
+  }
+
+  /* ── NOISE TEXTURE ── */
+  .noise {
+    position: fixed; inset: 0;
+    opacity: 0.03;
+    pointer-events: none;
+    z-index: 9997;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    animation: noiseAnim 0.5s steps(2) infinite;
+  }
+
+  @keyframes noiseAnim {
+    0% { transform: translate(0,0); }
+    25% { transform: translate(-2px, 2px); }
+    50% { transform: translate(2px, -1px); }
+    75% { transform: translate(-1px, 1px); }
+    100% { transform: translate(0,0); }
+  }
+
+  /* ────────────────────────────────────
+     BOOT SCREEN
+  ──────────────────────────────────── */
+  #boot-screen {
+    position: fixed; inset: 0;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9000;
+    padding: 2rem;
+  }
+
+  .boot-logo {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(1.2rem, 4vw, 2.5rem);
+    font-weight: 900;
+    color: var(--blood-bright);
+    text-shadow: 0 0 20px var(--blood), 0 0 60px rgba(204,0,0,0.4);
+    letter-spacing: 0.3em;
+    margin-bottom: 3rem;
+    animation: flicker 4s ease-in-out infinite;
+  }
+
+  @keyframes flicker {
+    0%, 95%, 100% { opacity: 1; }
+    96% { opacity: 0.3; }
+    97% { opacity: 1; }
+    98% { opacity: 0.1; }
+    99% { opacity: 1; }
+  }
+
+  .boot-line {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: clamp(0.65rem, 1.5vw, 0.85rem);
+    color: #555;
+    text-align: left;
+    width: min(600px, 90vw);
+    margin: 0.18rem 0;
+    opacity: 0;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .boot-line.active { color: #888; opacity: 1; }
+  .boot-line.ok { color: var(--blood-bright); }
+  .boot-line.warn { color: #cc6600; }
+
+  .boot-progress-wrap {
+    width: min(600px, 90vw);
+    height: 2px;
+    background: #111;
+    margin-top: 2.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .boot-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--blood-bright);
+    box-shadow: 0 0 12px var(--blood-glow);
+    transition: width 0.1s linear;
+  }
+
+  .boot-pct {
+    font-size: 0.7rem;
+    color: var(--blood-bright);
+    margin-top: 0.5rem;
+    text-align: right;
+    width: min(600px, 90vw);
+  }
+
+  /* ────────────────────────────────────
+     MAIN APP
+  ──────────────────────────────────── */
+  #app {
+    display: none;
+    min-height: 100vh;
+    position: relative;
+  }
+
+  /* ── BACKGROUND CANVAS ── */
+  #bg-canvas {
+    position: fixed; inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* ── EMERGENCY FLASH ── */
+  #emergency-flash {
+    position: fixed; inset: 0;
+    background: var(--blood);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 8999;
+  }
+
+  /* ── HEADER ── */
+  header {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 2rem;
+    border-bottom: 1px solid #1a0000;
+    background: linear-gradient(180deg, rgba(10,0,0,0.95) 0%, rgba(0,0,0,0.8) 100%);
+  }
+
+  .header-logo {
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    font-size: clamp(0.8rem, 2vw, 1.1rem);
+    color: var(--blood-bright);
+    letter-spacing: 0.2em;
+    text-shadow: 0 0 15px var(--blood);
+  }
+
+  .header-logo span { color: #555; font-weight: 400; }
+
+  .header-status {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.65rem;
+    color: #444;
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--blood-bright);
+    box-shadow: 0 0 8px var(--blood-glow);
+    animation: pulseDot 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulseDot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.6); }
+  }
+
+  .header-id { color: #333; font-size: 0.6rem; }
+
+  /* ── MAIN LAYOUT ── */
+  main {
+    position: relative;
+    z-index: 10;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  /* ── SECTION TITLES ── */
+  .section-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.4em;
+    color: var(--blood);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .section-label::before {
+    content: '';
+    display: inline-block;
+    width: 20px; height: 1px;
+    background: var(--blood);
+  }
+
+  /* ── UPLOAD ZONE ── */
+  #upload-zone {
+    border: 1px solid #1a0000;
+    background: linear-gradient(135deg, rgba(10,0,0,0.9) 0%, rgba(5,5,5,0.95) 100%);
+    border-radius: 2px;
+    padding: 4rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    margin-bottom: 1.5rem;
+  }
+
+  #upload-zone::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: 
+      linear-gradient(90deg, transparent 49.5%, rgba(139,0,0,0.08) 49.5%, rgba(139,0,0,0.08) 50.5%, transparent 50.5%),
+      linear-gradient(0deg, transparent 49.5%, rgba(139,0,0,0.08) 49.5%, rgba(139,0,0,0.08) 50.5%, transparent 50.5%);
+    pointer-events: none;
+  }
+
+  #upload-zone:hover, #upload-zone.drag-over {
+    border-color: var(--blood);
+    box-shadow: 0 0 40px rgba(139,0,0,0.3), inset 0 0 60px rgba(139,0,0,0.05);
+  }
+
+  .upload-icon {
+    width: 80px; height: 80px;
+    margin: 0 auto 1.5rem;
+    position: relative;
+  }
+
+  .upload-icon svg {
+    width: 100%; height: 100%;
+    color: var(--blood);
+    filter: drop-shadow(0 0 10px var(--blood));
+    animation: uploadPulse 3s ease-in-out infinite;
+  }
+
+  @keyframes uploadPulse {
+    0%, 100% { filter: drop-shadow(0 0 10px var(--blood)); }
+    50% { filter: drop-shadow(0 0 25px var(--blood-glow)); }
+  }
+
+  .upload-title {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(1.2rem, 3vw, 1.8rem);
+    font-weight: 900;
+    color: #ddd;
+    letter-spacing: 0.15em;
+    margin-bottom: 0.5rem;
+    text-shadow: 0 0 20px rgba(255,255,255,0.1);
+  }
+
+  .upload-sub {
+    font-size: 0.7rem;
+    color: #444;
+    letter-spacing: 0.2em;
+    margin-bottom: 1.5rem;
+  }
+
+  .upload-btn {
+    display: inline-block;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    color: var(--blood-bright);
+    border: 1px solid var(--blood);
+    padding: 0.75rem 2rem;
+    background: rgba(139,0,0,0.08);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .upload-btn:hover {
+    background: rgba(139,0,0,0.2);
+    box-shadow: 0 0 20px rgba(139,0,0,0.4);
+    color: #fff;
+  }
+
+  #file-input { display: none; }
+
+  /* ── WAVEFORM DISPLAY ── */
+  #waveform-section {
+    display: none;
+    background: rgba(5,0,0,0.8);
+    border: 1px solid #1a0000;
+    border-radius: 2px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #waveform-canvas {
+    width: 100%;
+    height: 120px;
+    display: block;
+  }
+
+  .waveform-overlay-text {
+    position: absolute;
+    top: 0.5rem; left: 1rem;
+    font-size: 0.6rem;
+    color: var(--blood);
+    letter-spacing: 0.3em;
+    opacity: 0.6;
+  }
+
+  .waveform-overlay-right {
+    position: absolute;
+    top: 0.5rem; right: 1rem;
+    font-size: 0.6rem;
+    color: #333;
+    letter-spacing: 0.2em;
+  }
+
+  /* ── SCAN BUTTON ── */
+  #scan-btn {
+    display: none;
+    width: 100%;
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(0.8rem, 2vw, 1rem);
+    font-weight: 900;
+    letter-spacing: 0.4em;
+    color: #000;
+    background: linear-gradient(135deg, var(--blood-bright) 0%, var(--blood) 100%);
+    border: none;
+    padding: 1.2rem;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #scan-btn::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    transform: translateX(-100%);
+    transition: transform 0.5s;
+  }
+
+  #scan-btn:hover::before { transform: translateX(100%); }
+
+  #scan-btn:hover {
+    box-shadow: 0 0 40px rgba(204,0,0,0.6), 0 0 80px rgba(204,0,0,0.2);
+    transform: translateY(-1px);
+  }
+
+  /* ── SCANNING PROGRESS ── */
+  #scan-progress {
+    display: none;
+    margin-bottom: 1.5rem;
+  }
+
+  .scan-line-wrap {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .scan-label {
+    font-size: 0.65rem;
+    color: var(--blood);
+    letter-spacing: 0.2em;
+    min-width: 220px;
+  }
+
+  .scan-bar-wrap {
+    flex: 1;
+    height: 2px;
+    background: #111;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .scan-bar-fill {
+    height: 100%;
+    background: var(--blood-bright);
+    box-shadow: 0 0 8px var(--blood-glow);
+    width: 0%;
+    transition: width 0.05s linear;
+  }
+
+  .scan-pct {
+    font-size: 0.6rem;
+    color: #444;
+    min-width: 35px;
+    text-align: right;
+  }
+
+  /* ── TRAUMA REPORT ── */
+  #trauma-report {
+    display: none;
+  }
+
+  .panel {
+    background: linear-gradient(135deg, rgba(8,0,0,0.95) 0%, rgba(5,5,5,0.9) 100%);
+    border: 1px solid #1a0000;
+    border-radius: 2px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--blood), transparent);
+    opacity: 0.5;
+  }
+
+  .panel-title {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(0.7rem, 2vw, 0.9rem);
+    font-weight: 700;
+    color: var(--blood-bright);
+    letter-spacing: 0.3em;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .panel-title-icon {
+    width: 8px; height: 8px;
+    background: var(--blood-bright);
+    box-shadow: 0 0 10px var(--blood-glow);
+    animation: pulseDot 1.5s ease-in-out infinite;
+  }
+
+  /* ── TRAUMA ITEMS ── */
+  .trauma-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid rgba(139,0,0,0.1);
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+
+  .trauma-item:last-child { border-bottom: none; }
+
+  .trauma-severity {
+    font-size: 0.55rem;
+    font-family: 'Orbitron', monospace;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid;
+    min-width: 80px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .trauma-severity.critical {
+    color: var(--blood-glow);
+    border-color: var(--blood-glow);
+    background: rgba(255,17,17,0.1);
+    box-shadow: 0 0 10px rgba(255,17,17,0.2);
+    animation: criticalPulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes criticalPulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(255,17,17,0.2); }
+    50% { box-shadow: 0 0 20px rgba(255,17,17,0.5); }
+  }
+
+  .trauma-severity.warning {
+    color: #cc6600;
+    border-color: #cc6600;
+    background: rgba(204,102,0,0.08);
+  }
+
+  .trauma-severity.stable {
+    color: #666;
+    border-color: #333;
+    background: rgba(255,255,255,0.02);
+  }
+
+  .trauma-content { flex: 1; }
+
+  .trauma-name {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: clamp(0.85rem, 2vw, 1rem);
+    font-weight: 700;
+    color: #ccc;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.3rem;
+  }
+
+  .trauma-detail {
+    font-size: 0.65rem;
+    color: #444;
+    line-height: 1.6;
+  }
+
+  .trauma-meter {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+  }
+
+  .trauma-bar {
+    flex: 1;
+    height: 2px;
+    background: #111;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .trauma-bar-fill {
+    height: 100%;
+    background: var(--blood-bright);
+    box-shadow: 0 0 6px var(--blood);
+    transition: width 1s ease;
+    width: 0%;
+  }
+
+  .trauma-val {
+    font-size: 0.6rem;
+    color: var(--blood);
+    min-width: 30px;
+    text-align: right;
+  }
+
+  /* ── RECOVERY CHAIN ── */
+  .recovery-chain {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .chain-node {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: #888;
+    border: 1px solid #222;
+    padding: 0.4rem 0.8rem;
+    background: rgba(255,255,255,0.02);
+    transition: all 0.3s;
+    opacity: 0;
+    position: relative;
+  }
+
+  .chain-node.active {
+    color: #ccc;
+    border-color: var(--blood);
+    background: rgba(139,0,0,0.08);
+    box-shadow: 0 0 10px rgba(139,0,0,0.2);
+  }
+
+  .chain-arrow {
+    color: var(--blood);
+    font-size: 0.8rem;
+    opacity: 0;
+  }
+
+  /* ── PARAMETER GRID ── */
+  .param-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
+  }
+
+  .param-item {
+    border: 1px solid #1a0000;
+    padding: 1rem;
+    background: rgba(0,0,0,0.4);
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  .param-label {
+    font-size: 0.55rem;
+    letter-spacing: 0.3em;
+    color: #444;
+    margin-bottom: 0.5rem;
+  }
+
+  .param-value {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(0.9rem, 2.5vw, 1.2rem);
+    font-weight: 700;
+    color: var(--blood-bright);
+    text-shadow: 0 0 10px var(--blood);
+  }
+
+  .param-unit {
+    font-size: 0.6rem;
+    color: #444;
+    margin-top: 0.2rem;
+  }
+
+  /* ── STABILIZE BUTTON ── */
+  #stabilize-btn {
+    display: none;
+    width: 100%;
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(0.85rem, 2.5vw, 1.2rem);
+    font-weight: 900;
+    letter-spacing: 0.4em;
+    color: var(--blood-bright);
+    background: transparent;
+    border: 2px solid var(--blood);
+    padding: 1.5rem;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+    animation: stabilizePulse 2s ease-in-out infinite;
+  }
+
+  @keyframes stabilizePulse {
+    0%, 100% {
+      box-shadow: 0 0 20px rgba(139,0,0,0.3), inset 0 0 20px rgba(139,0,0,0.05);
+      border-color: var(--blood);
+    }
+    50% {
+      box-shadow: 0 0 50px rgba(204,0,0,0.5), inset 0 0 30px rgba(204,0,0,0.1);
+      border-color: var(--blood-bright);
+    }
+  }
+
+  #stabilize-btn:hover {
+    background: rgba(139,0,0,0.15);
+    box-shadow: 0 0 80px rgba(204,0,0,0.7) !important;
+    transform: scale(1.01);
+    color: #fff;
+  }
+
+  /* ── FINAL DIAGNOSIS ── */
+  #final-diagnosis {
+    display: none;
+    background: linear-gradient(135deg, rgba(12,0,0,0.98) 0%, rgba(5,0,0,0.95) 100%);
+    border: 1px solid var(--blood);
+    border-radius: 2px;
+    padding: 2.5rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 2rem;
+  }
+
+  #final-diagnosis::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at center, rgba(139,0,0,0.08) 0%, transparent 70%);
+  }
+
+  .diagnosis-title {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(1rem, 3vw, 1.5rem);
+    font-weight: 900;
+    color: var(--blood-bright);
+    letter-spacing: 0.3em;
+    margin-bottom: 1rem;
+    text-shadow: 0 0 30px var(--blood-glow);
+  }
+
+  .diagnosis-grade {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(3rem, 10vw, 6rem);
+    font-weight: 900;
+    color: var(--blood-bright);
+    text-shadow: 0 0 40px var(--blood-glow), 0 0 80px rgba(204,0,0,0.3);
+    line-height: 1;
+    margin-bottom: 1rem;
+  }
+
+  .diagnosis-text {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: clamp(0.9rem, 2vw, 1.1rem);
+    color: #888;
+    letter-spacing: 0.1em;
+    max-width: 600px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  .diagnosis-stamp {
+    position: absolute;
+    top: 50%; right: 2rem;
+    transform: translateY(-50%) rotate(15deg);
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(0.6rem, 2vw, 0.9rem);
+    font-weight: 900;
+    color: rgba(139,0,0,0.15);
+    border: 3px solid rgba(139,0,0,0.15);
+    padding: 0.5rem 1rem;
+    letter-spacing: 0.2em;
+    pointer-events: none;
+  }
+
+  /* ── OSCILLOSCOPE ── */
+  #osc-canvas {
+    width: 100%;
+    height: 80px;
+    display: block;
+    opacity: 0.4;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    position: relative;
+    z-index: 10;
+    border-top: 1px solid #0d0000;
+    padding: 1.5rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(5,0,0,0.8);
+  }
+
+  .footer-brand {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.6rem;
+    color: #333;
+    letter-spacing: 0.3em;
+  }
+
+  .footer-brand span { color: var(--blood); }
+
+  .footer-meta {
+    font-size: 0.55rem;
+    color: #222;
+    letter-spacing: 0.2em;
+  }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #000; }
+  ::-webkit-scrollbar-thumb { background: var(--blood); }
+
+  /* ── LED STRIP ── */
+  .led-strip {
+    height: 2px;
+    background: linear-gradient(90deg,
+      transparent 0%,
+      var(--blood) 20%,
+      var(--blood-bright) 50%,
+      var(--blood) 80%,
+      transparent 100%
+    );
+    box-shadow: 0 0 15px var(--blood);
+    animation: ledFlow 3s linear infinite;
+    background-size: 200% 100%;
+  }
+
+  @keyframes ledFlow {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+  }
+
+  /* ── GRID LAYOUT ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 768px) {
+    .two-col { grid-template-columns: 1fr; }
+    header { padding: 1rem; }
+    main { padding: 1rem; }
+    .diagnosis-stamp { display: none; }
+  }
+
+  /* ── GLITCH ── */
+  .glitch {
+    position: relative;
+    animation: glitchAnim 6s steps(1) infinite;
+  }
+
+  @keyframes glitchAnim {
+    0%, 94%, 100% { clip-path: none; transform: none; }
+    95% { clip-path: polygon(0 20%, 100% 20%, 100% 30%, 0 30%); transform: translate(-4px, 0); }
+    96% { clip-path: polygon(0 60%, 100% 60%, 100% 70%, 0 70%); transform: translate(4px, 0); }
+    97% { clip-path: none; transform: none; }
+    98% { clip-path: polygon(0 40%, 100% 40%, 100% 50%, 0 50%); transform: translate(-2px, 0); }
+    99% { clip-path: none; transform: none; }
+  }
+
+  /* ── TYPE CURSOR ── */
+  .type-cursor::after {
+    content: '█';
+    animation: blink 0.7s step-end infinite;
+    color: var(--blood-bright);
+    font-size: 0.8em;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* corner decorations */
+  .corner-deco {
+    position: absolute;
+    width: 20px; height: 20px;
+    pointer-events: none;
+  }
+  .corner-deco.tl { top: 0; left: 0; border-top: 1px solid var(--blood); border-left: 1px solid var(--blood); }
+  .corner-deco.tr { top: 0; right: 0; border-top: 1px solid var(--blood); border-right: 1px solid var(--blood); }
+  .corner-deco.bl { bottom: 0; left: 0; border-bottom: 1px solid var(--blood); border-left: 1px solid var(--blood); }
+  .corner-deco.br { bottom: 0; right: 0; border-bottom: 1px solid var(--blood); border-right: 1px solid var(--blood); }
+
+  /* reset button */
+  #reset-btn {
+    display: none;
+    margin: 0 auto 2rem;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.3em;
+    color: #333;
+    background: transparent;
+    border: 1px solid #1a1a1a;
+    padding: 0.5rem 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  #reset-btn:hover { color: var(--blood); border-color: var(--blood); }
+
+  /* ══════════════════════════════════
+     PATIENT INTAKE FORM
+  ══════════════════════════════════ */
+  #intake-section {
+    display: none;
+    margin-bottom: 1.5rem;
+  }
+
+  .intake-panel {
+    background: linear-gradient(135deg, rgba(8,0,0,0.95), rgba(4,4,4,0.9));
+    border: 1px solid #1a0000;
+    border-radius: 2px;
+    padding: 1.8rem;
+    position: relative;
+  }
+
+  .intake-panel::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--blood), transparent);
+    opacity: 0.4;
+  }
+
+  .intake-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.2rem;
+  }
+
+  @media (max-width: 600px) { .intake-grid { grid-template-columns: 1fr; } }
+
+  .intake-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .intake-field.full { grid-column: 1 / -1; }
+
+  .intake-label {
+    font-size: 0.55rem;
+    letter-spacing: 0.35em;
+    color: var(--blood);
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .intake-input, .intake-select {
+    background: rgba(0,0,0,0.6);
+    border: 1px solid #1a0000;
+    color: #aaa;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.75rem;
+    padding: 0.6rem 0.8rem;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    appearance: none;
+    -webkit-appearance: none;
+    border-radius: 0;
+  }
+
+  .intake-input:focus, .intake-select:focus {
+    border-color: var(--blood);
+    box-shadow: 0 0 10px rgba(139,0,0,0.2);
+    color: #ccc;
+  }
+
+  .intake-input::placeholder { color: #222; }
+
+  .intake-select option { background: #0a0000; color: #aaa; }
+
+  .intake-radio-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .intake-radio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.65rem;
+    color: #555;
+    cursor: pointer;
+    border: 1px solid #111;
+    padding: 0.35rem 0.7rem;
+    transition: all 0.2s;
+  }
+
+  .intake-radio-label:hover { border-color: #333; color: #888; }
+  .intake-radio-label input { display: none; }
+  .intake-radio-label.selected {
+    border-color: var(--blood);
+    color: var(--blood-bright);
+    background: rgba(139,0,0,0.08);
+  }
+
+  #intake-confirm-btn {
+    width: 100%;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.35em;
+    color: var(--blood-bright);
+    background: rgba(139,0,0,0.06);
+    border: 1px solid var(--blood);
+    padding: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 0.5rem;
+  }
+
+  #intake-confirm-btn:hover {
+    background: rgba(139,0,0,0.15);
+    box-shadow: 0 0 20px rgba(204,0,0,0.3);
+    color: #fff;
+  }
+
+  /* intake summary badge */
+  #intake-summary {
+    display: none;
+    font-size: 0.6rem;
+    color: #333;
+    letter-spacing: 0.2em;
+    padding: 0.5rem 0;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #0d0000;
+  }
+  #intake-summary span { color: var(--blood); margin-right: 1.5rem; }
+
+  /* ══════════════════════════════════
+     AUDIO HOSPITAL RADIO
+  ══════════════════════════════════ */
+  #radio-player {
+    position: fixed;
+    bottom: 1rem; right: 1rem;
+    z-index: 5000;
+    width: 220px;
+    background: rgba(4,0,0,0.97);
+    border: 1px solid var(--blood);
+    padding: 0.9rem;
+    box-shadow: 0 0 30px rgba(139,0,0,0.3);
+    transform: translateY(100px);
+    opacity: 0;
+    transition: transform 0.5s ease, opacity 0.5s ease;
+  }
+
+  #radio-player.visible {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  .radio-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.6rem;
+  }
+
+  .radio-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    color: var(--blood-bright);
+  }
+
+  .radio-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--blood-bright);
+    box-shadow: 0 0 6px var(--blood-glow);
+    animation: pulseDot 1s ease-in-out infinite;
+  }
+
+  .radio-track {
+    font-size: 0.6rem;
+    color: #555;
+    margin-bottom: 0.7rem;
+    letter-spacing: 0.1em;
+    min-height: 1.2rem;
+  }
+
+  #radio-waveform {
+    width: 100%;
+    height: 30px;
+    display: block;
+    margin-bottom: 0.7rem;
+  }
+
+  .radio-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .radio-btn {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.55rem;
+    letter-spacing: 0.2em;
+    color: #444;
+    background: transparent;
+    border: 1px solid #111;
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex: 1;
+  }
+
+  .radio-btn:hover, .radio-btn.active {
+    color: var(--blood-bright);
+    border-color: var(--blood);
+    background: rgba(139,0,0,0.08);
+  }
+
+  .radio-vol {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+  }
+
+  .radio-vol-label { font-size: 0.5rem; color: #333; letter-spacing: 0.2em; }
+
+  .radio-vol-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 2px;
+    background: #111;
+    outline: none;
+    border-radius: 0;
+  }
+
+  .radio-vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 8px; height: 8px;
+    background: var(--blood-bright);
+    cursor: pointer;
+    border-radius: 0;
+    box-shadow: 0 0 4px var(--blood);
+  }
+
+  #radio-minimize {
+    position: absolute;
+    top: 0.4rem; right: 0.4rem;
+    font-size: 0.5rem;
+    color: #222;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color 0.2s;
+    padding: 0.2rem 0.4rem;
+  }
+  #radio-minimize:hover { color: var(--blood); }
+
+  #radio-tab {
+    position: fixed;
+    bottom: 1rem; right: 1rem;
+    z-index: 5001;
+    background: rgba(4,0,0,0.97);
+    border: 1px solid var(--blood);
+    padding: 0.4rem 0.8rem;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.5rem;
+    letter-spacing: 0.2em;
+    color: var(--blood-bright);
+    cursor: pointer;
+    display: none;
+    box-shadow: 0 0 15px rgba(139,0,0,0.2);
+    animation: pulseBorder 2s ease-in-out infinite;
+  }
+
+  @keyframes pulseBorder {
+    0%, 100% { box-shadow: 0 0 10px rgba(139,0,0,0.2); }
+    50% { box-shadow: 0 0 25px rgba(204,0,0,0.4); }
+  }
+
+  /* ══════════════════════════════════
+     CASE FILE HISTORY
+  ══════════════════════════════════ */
+  #case-history-panel {
+    position: fixed;
+    top: 4rem; left: 0;
+    z-index: 4000;
+    width: 260px;
+    background: rgba(4,0,0,0.98);
+    border: 1px solid #1a0000;
+    border-left: none;
+    transform: translateX(-261px);
+    transition: transform 0.4s ease;
+    max-height: calc(100vh - 5rem);
+    overflow-y: auto;
+  }
+
+  #case-history-panel.open { transform: translateX(0); }
+
+  .case-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid #0d0000;
+    position: sticky;
+    top: 0;
+    background: rgba(4,0,0,0.98);
+  }
+
+  .case-panel-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    color: var(--blood-bright);
+  }
+
+  #case-panel-close {
+    background: none; border: none;
+    color: #333; cursor: pointer;
+    font-size: 0.8rem;
+    transition: color 0.2s;
+  }
+  #case-panel-close:hover { color: var(--blood); }
+
+  .case-entry {
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid #080000;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .case-entry:hover { background: rgba(139,0,0,0.04); }
+
+  .case-entry-id {
+    font-size: 0.5rem;
+    color: #333;
+    letter-spacing: 0.2em;
+    margin-bottom: 0.2rem;
+  }
+
+  .case-entry-name {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #888;
+    margin-bottom: 0.3rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .case-entry-meta {
+    display: flex;
+    gap: 0.8rem;
+    font-size: 0.55rem;
+    color: #333;
+  }
+
+  .case-entry-grade {
+    color: var(--blood-bright);
+    font-family: 'Orbitron', monospace;
+    font-weight: 700;
+  }
+
+  .case-empty {
+    padding: 1.5rem 1rem;
+    font-size: 0.6rem;
+    color: #222;
+    text-align: center;
+    letter-spacing: 0.2em;
+    line-height: 2;
+  }
+
+  /* case history toggle button */
+  #case-history-toggle {
+    position: fixed;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    z-index: 4001;
+    background: rgba(4,0,0,0.97);
+    border: 1px solid #1a0000;
+    border-left: none;
+    padding: 0.8rem 0.4rem;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    transition: border-color 0.2s;
+  }
+
+  #case-history-toggle:hover { border-color: var(--blood); }
+
+  .toggle-label {
+    font-size: 0.45rem;
+    letter-spacing: 0.15em;
+    color: #333;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+    font-family: 'Share Tech Mono', monospace;
+    line-height: 1;
+  }
+
+  .toggle-count {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.55rem;
+    color: var(--blood);
+    font-weight: 700;
+  }
+
+  /* ══════════════════════════════════
+     WHATSAPP BOOKING
+  ══════════════════════════════════ */
+  #booking-panel {
+    display: none;
+    margin-bottom: 1.5rem;
+  }
+
+  .booking-block {
+    background: linear-gradient(135deg, rgba(0,8,0,0.95), rgba(0,4,0,0.9));
+    border: 1px solid rgba(0,80,0,0.3);
+    padding: 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .booking-block::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0,180,0,0.4), transparent);
+  }
+
+  .booking-alert {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-bottom: 1rem;
+  }
+
+  .booking-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+  }
+
+  .booking-alert-text { flex: 1; }
+
+  .booking-alert-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #5dff5d;
+    letter-spacing: 0.15em;
+    margin-bottom: 0.25rem;
+    text-shadow: 0 0 10px rgba(93,255,93,0.3);
+  }
+
+  .booking-alert-sub {
+    font-size: 0.6rem;
+    color: #2a4a2a;
+    letter-spacing: 0.1em;
+    line-height: 1.5;
+  }
+
+  .booking-services {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-bottom: 1.2rem;
+  }
+
+  @media (max-width: 500px) { .booking-services { grid-template-columns: 1fr; } }
+
+  .booking-service {
+    border: 1px solid rgba(0,60,0,0.3);
+    padding: 0.7rem;
+    background: rgba(0,10,0,0.5);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .booking-service:hover, .booking-service.selected {
+    border-color: rgba(0,150,0,0.5);
+    background: rgba(0,20,0,0.7);
+  }
+
+  .booking-service.selected { box-shadow: 0 0 10px rgba(0,100,0,0.2); }
+
+  .booking-service-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    border: 1px solid #1a4a1a;
+    flex-shrink: 0;
+    transition: background 0.2s;
+  }
+
+  .booking-service.selected .booking-service-dot {
+    background: #5dff5d;
+    border-color: #5dff5d;
+    box-shadow: 0 0 6px rgba(93,255,93,0.5);
+  }
+
+  .booking-service-text {
+    font-size: 0.65rem;
+    color: #2a6a2a;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    transition: color 0.2s;
+  }
+
+  .booking-service.selected .booking-service-text { color: #5dff5d; }
+
+  #wa-book-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    width: 100%;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    color: #000;
+    background: linear-gradient(135deg, #25d366, #128c3e);
+    border: none;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+  }
+
+  #wa-book-btn:hover {
+    box-shadow: 0 0 30px rgba(37,211,102,0.4);
+    transform: translateY(-1px);
+  }
+
+  /* ── ARSENAL SECTION ── */
+  #arsenal-section {
+    position: relative;
+    z-index: 10;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 2rem 3rem;
+  }
+
+  .arsenal-divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .arsenal-divider-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #1a0000, transparent);
+  }
+
+  .arsenal-divider-text {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--blood);
+    letter-spacing: 0.4em;
+    white-space: nowrap;
+  }
+
+  .arsenal-header {
+    margin-bottom: 2rem;
+  }
+
+  .arsenal-title {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(1rem, 3vw, 1.4rem);
+    font-weight: 900;
+    color: #ddd;
+    letter-spacing: 0.15em;
+    margin-bottom: 0.4rem;
+    text-shadow: 0 0 20px rgba(255,255,255,0.05);
+  }
+
+  .arsenal-subtitle {
+    font-size: 0.65rem;
+    color: #333;
+    letter-spacing: 0.2em;
+  }
+
+  .arsenal-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1px;
+    background: #0d0000;
+    border: 1px solid #0d0000;
+    margin-bottom: 1.5rem;
+  }
+
+  .vst-card {
+    background: #050000;
+    padding: 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    text-decoration: none;
+    transition: background 0.2s, box-shadow 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .vst-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 2px; height: 100%;
+    background: var(--blood);
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform 0.3s ease;
+  }
+
+  .vst-card:hover {
+    background: rgba(20,0,0,0.95);
+    box-shadow: inset 0 0 30px rgba(139,0,0,0.06);
+  }
+
+  .vst-card:hover::before { transform: scaleY(1); }
+
+  .vst-tag {
+    font-size: 0.5rem;
+    letter-spacing: 0.3em;
+    color: var(--blood);
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .vst-name {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: clamp(0.85rem, 2vw, 1rem);
+    font-weight: 700;
+    color: #bbb;
+    letter-spacing: 0.05em;
+    line-height: 1.3;
+    transition: color 0.2s;
+  }
+
+  .vst-card:hover .vst-name { color: #fff; }
+
+  .vst-price {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--blood-bright);
+    margin-top: auto;
+  }
+
+  .vst-price.free { color: #336633; }
+
+  .vst-arrow {
+    position: absolute;
+    bottom: 1rem; right: 1rem;
+    font-size: 0.7rem;
+    color: #1a0000;
+    transition: color 0.2s, transform 0.2s;
+  }
+
+  .vst-card:hover .vst-arrow {
+    color: var(--blood);
+    transform: translate(2px, -2px);
+  }
+
+  /* bandcamp block */
+  .bandcamp-block {
+    border: 1px solid #0d0000;
+    background: #030000;
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    text-decoration: none;
+    transition: border-color 0.3s, background 0.3s;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 1rem;
+  }
+
+  .bandcamp-block::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at left center, rgba(139,0,0,0.06) 0%, transparent 60%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .bandcamp-block:hover {
+    border-color: var(--blood);
+    background: rgba(8,0,0,0.95);
+  }
+
+  .bandcamp-block:hover::after { opacity: 1; }
+
+  .bc-icon {
+    width: 50px; height: 50px;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #1a0000, #0a0000);
+    border: 1px solid var(--blood);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    box-shadow: 0 0 15px rgba(139,0,0,0.2);
+  }
+
+  .bc-content { flex: 1; }
+
+  .bc-label {
+    font-size: 0.55rem;
+    letter-spacing: 0.3em;
+    color: var(--blood);
+    margin-bottom: 0.3rem;
+  }
+
+  .bc-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: clamp(0.9rem, 2vw, 1.1rem);
+    font-weight: 700;
+    color: #ccc;
+    letter-spacing: 0.05em;
+  }
+
+  .bc-sub {
+    font-size: 0.6rem;
+    color: #333;
+    margin-top: 0.2rem;
+  }
+
+  .bc-cta {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--blood-bright);
+    border: 1px solid var(--blood);
+    padding: 0.4rem 0.8rem;
+    background: rgba(139,0,0,0.06);
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+
+  .bandcamp-block:hover .bc-cta {
+    background: rgba(139,0,0,0.15);
+    box-shadow: 0 0 12px rgba(204,0,0,0.3);
+  }
+
+  @media (max-width: 600px) {
+    .arsenal-grid { grid-template-columns: 1fr; }
+    .bandcamp-block { flex-direction: column; align-items: flex-start; }
+    .bc-cta { align-self: flex-start; }
+    #arsenal-section { padding: 0 1rem 2rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="noise"></div>
+<div id="emergency-flash"></div>
+
+<!-- ════════════════════════════════════
+     BOOT SCREEN
+═══════════════════════════════════════ -->
+<div id="boot-screen">
+  <div class="boot-logo glitch">AUDIO HOSPITAL</div>
+  <div id="boot-lines"></div>
+  <div class="boot-progress-wrap">
+    <div class="boot-progress-bar" id="boot-bar"></div>
+  </div>
+  <div class="boot-pct" id="boot-pct">0%</div>
+</div>
+
+<!-- ════════════════════════════════════
+     MAIN APP
+═══════════════════════════════════════ -->
+<div id="app">
+  <canvas id="bg-canvas"></canvas>
+
+  <!-- LED TOP -->
+  <div class="led-strip"></div>
+
+  <header>
+    <div class="header-logo glitch">MIX TRAUMA SCANNER <span>// AUDIO HOSPITAL</span></div>
+    <div class="header-status">
+      <div class="status-dot"></div>
+      <span>SYSTEM ONLINE</span>
+      <span class="header-id">UNIT-AH-7734</span>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ── PATIENT INTAKE FORM ── -->
+    <div id="intake-section">
+      <div class="section-label">PATIENT REGISTRATION — CASE FILE INITIALIZATION</div>
+      <div class="intake-panel">
+        <div class="panel-title" style="margin-bottom:1.2rem;"><div class="panel-title-icon"></div> TRAUMA INTAKE — FILL BEFORE SIGNAL INJECTION</div>
+        <div class="intake-grid">
+          <div class="intake-field">
+            <div class="intake-label">PRODUCER ALIAS / HANDLE</div>
+            <input class="intake-input" id="intake-alias" type="text" placeholder="e.g. SMOKEY EYE BEATS" maxlength="40">
+          </div>
+          <div class="intake-field">
+            <div class="intake-label">PRIMARY DAW</div>
+            <select class="intake-select" id="intake-daw">
+              <option value="">— SELECT DAW —</option>
+              <option>FL Studio</option><option>Ableton Live</option><option>Logic Pro</option>
+              <option>Pro Tools</option><option>Reaper</option><option>Studio One</option>
+              <option>Cubase</option><option>Bitwig</option><option>Other</option>
+            </select>
+          </div>
+          <div class="intake-field">
+            <div class="intake-label">GENRE / SOUND TERRITORY</div>
+            <select class="intake-select" id="intake-genre">
+              <option value="">— SELECT GENRE —</option>
+              <option>Hip-Hop / Trap</option><option>Afrobeats / Amapiano</option>
+              <option>Neo-Soul / R&amp;B</option><option>Electronic / EDM</option>
+              <option>Rock / Metal</option><option>Drill</option>
+              <option>Lo-Fi</option><option>Experimental</option><option>Other</option>
+            </select>
+          </div>
+          <div class="intake-field">
+            <div class="intake-label">HOURS SPENT ON THIS MIX</div>
+            <select class="intake-select" id="intake-hours">
+              <option value="">— HOURS IN —</option>
+              <option>Under 1 hour</option><option>1–3 hours</option>
+              <option>3–6 hours</option><option>6–12 hours</option>
+              <option>12–24 hours</option><option>Multiple days (danger zone)</option>
+            </select>
+          </div>
+          <div class="intake-field full">
+            <div class="intake-label">CURRENT EMOTIONAL STATE</div>
+            <div class="intake-radio-group" id="intake-mood">
+              <label class="intake-radio-label"><input type="radio" name="mood" value="focused"> 🎯 Focused</label>
+              <label class="intake-radio-label"><input type="radio" name="mood" value="frustrated"> 😤 Frustrated</label>
+              <label class="intake-radio-label"><input type="radio" name="mood" value="confident"> 🔥 Confident</label>
+              <label class="intake-radio-label"><input type="radio" name="mood" value="lost"> 🌀 Lost in the Mix</label>
+              <label class="intake-radio-label"><input type="radio" name="mood" value="tired"> 💀 Running on No Sleep</label>
+            </div>
+          </div>
+        </div>
+        <button id="intake-confirm-btn">⬡ REGISTER PATIENT — PROCEED TO SIGNAL INJECTION ⬡</button>
+      </div>
+    </div>
+
+    <!-- INTAKE SUMMARY BAR -->
+    <div id="intake-summary"></div>
+
+    <!-- ── UPLOAD SECTION ── -->
+    <div class="section-label" id="upload-label" style="display:none;">SIGNAL INJECTION POINT</div>
+
+    <div id="upload-zone" onclick="document.getElementById('file-input').click()" style="display:none;">
+      <div class="corner-deco tl"></div>
+      <div class="corner-deco tr"></div>
+      <div class="corner-deco bl"></div>
+      <div class="corner-deco br"></div>
+
+      <div class="upload-icon">
+        <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="40" cy="40" r="35" stroke-dasharray="4 4" opacity="0.3"/>
+          <circle cx="40" cy="40" r="25" opacity="0.15"/>
+          <path d="M40 55 V25 M30 35 L40 25 L50 35" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="25" y1="58" x2="55" y2="58" stroke-linecap="round"/>
+        </svg>
+      </div>
+
+      <div class="upload-title">INJECT SIGNAL</div>
+      <div class="upload-sub">DROP AUDIO FILE OR INITIATE MANUAL UPLOAD</div>
+      <div class="upload-btn">OPEN TRAUMA INTAKE</div>
+    </div>
+
+    <input type="file" id="file-input" accept="audio/*">
+
+    <!-- ── WAVEFORM ── -->
+    <div id="waveform-section">
+      <div class="waveform-overlay-text">SIGNAL ACQUIRED ── WAVEFORM ACTIVE</div>
+      <div class="waveform-overlay-right" id="file-name-display">──</div>
+      <canvas id="waveform-canvas"></canvas>
+    </div>
+
+    <!-- ── SCAN BUTTON ── -->
+    <button id="scan-btn">⬡ BEGIN TRAUMA SCAN ⬡</button>
+
+    <!-- ── PROGRESS ── -->
+    <div id="scan-progress"></div>
+
+    <!-- ── TRAUMA REPORT ── -->
+    <div id="trauma-report">
+
+      <!-- FINDINGS -->
+      <div class="section-label">TRAUMA FINDINGS</div>
+      <div class="panel">
+        <div class="panel-title"><div class="panel-title-icon"></div> AUDIO AUTOPSY RESULTS</div>
+        <div id="trauma-items-container"></div>
+      </div>
+
+      <!-- PARAMETERS -->
+      <div class="section-label">DIAGNOSTIC PARAMETERS</div>
+      <div class="panel">
+        <div class="panel-title"><div class="panel-title-icon"></div> HARMONIC STATUS MATRIX</div>
+        <div class="param-grid" id="param-grid"></div>
+      </div>
+
+      <!-- RECOVERY -->
+      <div class="section-label">EMERGENCY RESPONSE</div>
+      <div class="panel">
+        <div class="panel-title"><div class="panel-title-icon"></div> SIGNAL RECOVERY CHAIN</div>
+        <div class="recovery-chain" id="recovery-chain"></div>
+
+        <div style="margin-top: 1.5rem; border-top: 1px solid #1a0000; padding-top: 1.5rem;">
+          <div class="section-label" style="margin-bottom: 1rem;">SURGICAL EQ PRESCRIPTION</div>
+          <div id="eq-prescription" style="font-size: 0.7rem; color: #444; line-height: 2;"></div>
+        </div>
+
+        <div style="margin-top: 1.5rem; border-top: 1px solid #1a0000; padding-top: 1.5rem;">
+          <div class="section-label" style="margin-bottom: 0.5rem;">OSCILLOSCOPE — SIGNAL PULSE</div>
+          <canvas id="osc-canvas"></canvas>
+        </div>
+      </div>
+
+      <!-- STABILIZE -->
+      <button id="stabilize-btn">⚠ STABILIZE AUDIO ⚠</button>
+
+      <!-- FINAL -->
+      <div id="final-diagnosis">
+        <div class="corner-deco tl"></div>
+        <div class="corner-deco tr"></div>
+        <div class="corner-deco bl"></div>
+        <div class="corner-deco br"></div>
+        <div class="diagnosis-stamp">CLASSIFIED</div>
+        <div class="diagnosis-title">TRAUMA REPORT FINALIZED</div>
+        <div class="diagnosis-grade" id="diagnosis-grade">C+</div>
+        <div class="diagnosis-text" id="diagnosis-text"></div>
+      </div>
+
+      <button id="reset-btn">↺ INITIATE NEW SCAN</button>
+
+      <!-- WHATSAPP BOOKING -->
+      <div id="booking-panel">
+        <div class="section-label">HUMAN INTERVENTION REQUIRED</div>
+        <div class="booking-block">
+          <div class="booking-alert">
+            <div class="booking-icon">📞</div>
+            <div class="booking-alert-text">
+              <div class="booking-alert-title">THIS MIX NEEDS SMOKEY EYE BEATS</div>
+              <div class="booking-alert-sub">The scanner found what it found. Now let a human fix it.<br>Professional mixing, mastering &amp; sound design — Frequency Oasis.</div>
+            </div>
+          </div>
+          <div class="booking-services" id="booking-services">
+            <div class="booking-service" data-service="Mixing &amp; Mastering"><div class="booking-service-dot"></div><div class="booking-service-text">Mixing &amp; Mastering</div></div>
+            <div class="booking-service" data-service="Full Mix Rescue"><div class="booking-service-dot"></div><div class="booking-service-text">Full Mix Rescue</div></div>
+            <div class="booking-service" data-service="Sound Design Session"><div class="booking-service-dot"></div><div class="booking-service-text">Sound Design Session</div></div>
+            <div class="booking-service" data-service="Track Feedback &amp; Review"><div class="booking-service-dot"></div><div class="booking-service-text">Track Feedback &amp; Review</div></div>
+          </div>
+          <a id="wa-book-btn" href="#" target="_blank" rel="noopener">
+            <span>💬</span> BOOK SESSION ON WHATSAPP
+          </a>
+        </div>
+      </div>
+
+    </div><!-- /trauma-report -->
+
+  </main>
+
+  <!-- LED BOTTOM -->
+  <div class="led-strip"></div>
+
+  <!-- ════════════════════════════════════
+       ARSENAL — PLAN B
+  ═══════════════════════════════════════ -->
+  <div id="arsenal-section">
+    <div class="arsenal-divider">
+      <div class="arsenal-divider-line"></div>
+      <div class="arsenal-divider-text">⚕ PLAN B — SONIC ARSENAL</div>
+      <div class="arsenal-divider-line"></div>
+    </div>
+
+    <div class="arsenal-header">
+      <div class="section-label">IF THE SCAN DOESN'T FINISH YOU, THE WEAPONS WILL</div>
+      <div class="arsenal-title">DEPLOY AUDIO HOSPITAL VSTS</div>
+      <div class="arsenal-subtitle">SURGICAL TOOLS FOR PRODUCERS WHO DON'T NEGOTIATE WITH MEDIOCRITY</div>
+    </div>
+
+    <!-- VST GRID -->
+    <div class="arsenal-grid">
+
+      <a class="vst-card" href="https://frequencyoasis.gumroad.com/l/rnwoq" target="_blank" rel="noopener">
+        <div class="vst-tag">FREE EDITION — TACTICAL PACK</div>
+        <div class="vst-name">VOIDMAUL TACTICS: THE BRAIN RATTLERS</div>
+        <div class="vst-price free">FREE / PAY WHAT YOU WANT</div>
+        <div class="vst-arrow">↗</div>
+      </a>
+
+      <a class="vst-card" href="https://frequencyoasis.gumroad.com/l/jiqbl" target="_blank" rel="noopener">
+        <div class="vst-tag">DRUM PACK — SURGICAL PERCUSSION</div>
+        <div class="vst-name">HORDX Drum Pack</div>
+        <div class="vst-price">$31</div>
+        <div class="vst-arrow">↗</div>
+      </a>
+
+      <a class="vst-card" href="https://frequencyoasis.gumroad.com/l/oiwxm" target="_blank" rel="noopener">
+        <div class="vst-tag">AUDIO WEAPON — 2025 FIRST STRIKE</div>
+        <div class="vst-name">GORECOIL — No Mastering. No Mercy.</div>
+        <div class="vst-price">$31</div>
+        <div class="vst-arrow">↗</div>
+      </a>
+
+      <a class="vst-card" href="https://frequencyoasis.gumroad.com/l/tnmgd" target="_blank" rel="noopener">
+        <div class="vst-tag">INTELLIGENT DRUM MASTER</div>
+        <div class="vst-name">Drum Bus Doctor — Dirty Folk's Mix Tool</div>
+        <div class="vst-price">$31</div>
+        <div class="vst-arrow">↗</div>
+      </a>
+
+      <a class="vst-card" href="https://frequencyoasis.gumroad.com/l/tppow" target="_blank" rel="noopener">
+        <div class="vst-tag">FIX & ENHANCE — VOCAL SURGERY</div>
+        <div class="vst-name">Vocals Doctor — The Psycho Doctor</div>
+        <div class="vst-price">$31</div>
+        <div class="vst-arrow">↗</div>
+      </a>
+
+      <a class="vst-card" href="https://frequencyoasis.gumroad.com/l/xclsp" target="_blank" rel="noopener">
+        <div class="vst-tag">SURGICAL AUX REVERB SEND</div>
+        <div class="vst-name">Cryogenic Bleed — Reverb Weapon</div>
+        <div class="vst-price">$19</div>
+        <div class="vst-arrow">↗</div>
+      </a>
+
+      <a class="vst-card" href="https://frequencyoasis.gumroad.com/l/qycjmw" target="_blank" rel="noopener">
+        <div class="vst-tag">AWARD-WINNING — HORROR EQ</div>
+        <div class="vst-name">Piano Doctor — Horror EQ for Keys</div>
+        <div class="vst-price">$31</div>
+        <div class="vst-arrow">↗</div>
+      </a>
+
+      <a class="vst-card" href="https://frequencyoasis.gumroad.com/l/rhwsv" target="_blank" rel="noopener">
+        <div class="vst-tag">LEGACY — SMOKEY EYE BEATS</div>
+        <div class="vst-name">The Science of Keys — Legacy Edition</div>
+        <div class="vst-price">$31</div>
+        <div class="vst-arrow">↗</div>
+      </a>
+
+      <a class="vst-card" href="https://frequencyoasis.gumroad.com/l/pndhb" target="_blank" rel="noopener">
+        <div class="vst-tag">DARK HORSE + BLACK GENIUS VIBE</div>
+        <div class="vst-name">Muffle Touch — Guitar Edition</div>
+        <div class="vst-price">$31</div>
+        <div class="vst-arrow">↗</div>
+      </a>
+
+    </div><!-- /arsenal-grid -->
+
+    <!-- BANDCAMP BLOCK -->
+    <div class="section-label" style="margin-bottom: 1rem;">FIELD RECORDINGS — PROOF OF CONCEPT</div>
+    <a class="bandcamp-block" href="https://audiohospital.bandcamp.com/album/ashes-to-aura" target="_blank" rel="noopener">
+      <div class="bc-icon">🩸</div>
+      <div class="bc-content">
+        <div class="bc-label">AUDIO HOSPITAL — BANDCAMP ARCHIVE</div>
+        <div class="bc-title">Ashes to Aura</div>
+        <div class="bc-sub">SONIC ENGINEERING IN PRACTICE — SMOKEY EYE BEATS</div>
+      </div>
+      <div class="bc-cta">ACCESS ARCHIVE ↗</div>
+    </a>
+
+    <div style="text-align:center; margin-top: 1.5rem;">
+      <a href="https://frequencyoasis.gumroad.com/" target="_blank" rel="noopener"
+        style="font-family:'Orbitron',monospace; font-size:0.6rem; letter-spacing:0.35em; color:#222; text-decoration:none; border-bottom:1px solid #111; padding-bottom:2px; transition: color 0.2s, border-color 0.2s;"
+        onmouseover="this.style.color='var(--blood)';this.style.borderColor='var(--blood)'"
+        onmouseout="this.style.color='#222';this.style.borderColor='#111'">
+        VIEW FULL ARSENAL → FREQUENCYOASIS.GUMROAD.COM (57 PRODUCTS)
+      </a>
+    </div>
+
+  </div><!-- /arsenal-section -->
+
+  <footer>
+    <div class="footer-brand"><span>AUDIO HOSPITAL</span> — MIX TRAUMA SCANNER v2.4.1</div>
+    <div class="footer-meta">SONIC WEAPONS · TRAUMA TOOLS · SONIC ENGINEERING</div>
+  </footer>
+  <!-- AUDIO HOSPITAL RADIO -->
+  <div id="radio-player">
+    <button id="radio-minimize">✕</button>
+    <div class="radio-header">
+      <div class="radio-title">AH RADIO — DARK AMBIENT</div>
+      <div class="radio-dot" id="radio-dot" style="opacity:0.3;"></div>
+    </div>
+    <div class="radio-track" id="radio-track-name">— STANDBY —</div>
+    <canvas id="radio-waveform"></canvas>
+    <div class="radio-controls">
+      <button class="radio-btn" id="radio-play-btn">▶ PLAY</button>
+      <button class="radio-btn" id="radio-next-btn">⇥ NEXT</button>
+    </div>
+    <div class="radio-vol">
+      <div class="radio-vol-label">VOL</div>
+      <input class="radio-vol-slider" id="radio-vol" type="range" min="0" max="1" step="0.01" value="0.4">
+    </div>
+  </div>
+  <button id="radio-tab">⚡ AH RADIO</button>
+
+  <!-- CASE HISTORY TOGGLE -->
+  <button id="case-history-toggle">
+    <div class="toggle-label">CASE FILES</div>
+    <div class="toggle-count" id="case-toggle-count">0</div>
+  </button>
+
+  <!-- CASE HISTORY PANEL -->
+  <div id="case-history-panel">
+    <div class="case-panel-header">
+      <div class="case-panel-title">⚕ PREVIOUS CASES</div>
+      <button id="case-panel-close">✕</button>
+    </div>
+    <div id="case-entries-list">
+      <div class="case-empty">NO CASES ON RECORD<br>RUN YOUR FIRST SCAN<br>TO INITIALIZE ARCHIVE</div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<script>
+// ════════════════════════════════════
+//  DATA
+// ════════════════════════════════════
+const BOOT_LINES = [
+  { text: 'AUDIO HOSPITAL OS v7.3.4 — KERNEL LOADING...', delay: 0, cls: '' },
+  { text: 'INITIALIZING TRAUMA DETECTION MODULES...', delay: 280, cls: '' },
+  { text: '> harmonic_scanner.bin [OK]', delay: 500, cls: 'ok' },
+  { text: '> transient_analyzer.bin [OK]', delay: 700, cls: 'ok' },
+  { text: '> low_end_autopsy.bin [OK]', delay: 900, cls: 'ok' },
+  { text: '> stereo_collapse_detector.bin [OK]', delay: 1100, cls: 'ok' },
+  { text: '> emotional_clarity_module.bin [OK]', delay: 1300, cls: 'ok' },
+  { text: 'CALIBRATING X-RAY SIGNAL PATHWAYS...', delay: 1500, cls: '' },
+  { text: 'WARNING: SATURATION CORES RUNNING HOT', delay: 1800, cls: 'warn' },
+  { text: 'LOADING EMERGENCY RESPONSE PROTOCOLS...', delay: 2000, cls: '' },
+  { text: '> recovery_chain_v4.bin [OK]', delay: 2200, cls: 'ok' },
+  { text: '> surgical_eq_prescriber.bin [OK]', delay: 2400, cls: 'ok' },
+  { text: 'SCANNING SIGNAL PATHS...', delay: 2600, cls: '' },
+  { text: '████████████████ SIGNAL LOCKED', delay: 2900, cls: 'ok' },
+  { text: '━━━ TRAUMA UNIT ONLINE ━━━', delay: 3300, cls: 'ok' },
+];
+
+const TRAUMA_POOL = [
+  { name: 'LOW-END FRACTURE DETECTED', detail: 'Sub-bass frequencies below 60Hz show structural instability. Potential phase cancellation between kick and bass elements threatening low-end coherence.', severity: 'critical' },
+  { name: 'VOCAL SATURATION INSTABILITY', detail: 'Harmonic distortion artifacts detected in upper-mid vocal range (3-6kHz). Saturation applied inconsistently across transient peaks, causing tonal drift.', severity: 'critical' },
+  { name: 'STEREO FIELD COLLAPSE RISK', detail: 'Mono compatibility test reveals 34% signal loss at narrow correlation. Width elements below 200Hz risk destructive interference on mono playback systems.', severity: 'critical' },
+  { name: 'TRANSIENT DAMAGE FOUND', detail: 'Attack phase of percussive elements showing over-compression artifacts. Snare transients reduced by estimated 14dB from apparent over-limiting.', severity: 'warning' },
+  { name: 'EMOTIONAL CLARITY LOSS', detail: 'Mid-range frequency masking detected between 500-2kHz. Harmonic layering creating cognitive fatigue. Listener emotional engagement projected to drop 40% after 2 mins.', severity: 'warning' },
+  { name: 'HARMONIC CONTAMINATION', detail: 'Intermodulation distortion products detected across multiple signal paths. 3rd-order harmonics contaminating musical content above 8kHz.', severity: 'critical' },
+  { name: 'DYNAMIC RANGE COMPRESSION', detail: 'Mix dynamic range measured at 4.2dB — critical loudness war damage. Micro-dynamics completely obliterated. Breathing artifacts present on sustained notes.', severity: 'warning' },
+  { name: 'HIGH-FREQUENCY DECAY FAILURE', detail: 'Air frequencies above 14kHz showing accelerated roll-off inconsistent with source material. Possible sample-rate conversion artefacts or poorly matched EQ stages.', severity: 'warning' },
+  { name: 'ROOM MODE CONTAMINATION', detail: 'Uncontrolled room resonance peaks detected at 87Hz and 143Hz. Monitor placement artifacts have compromised mix translation across speaker systems.', severity: 'stable' },
+  { name: 'MID-RANGE CONGESTION', detail: 'Frequency pileup identified between 800Hz-2.5kHz. Six or more instruments occupying identical harmonic space without surgical separation. Causing listener fatigue.', severity: 'warning' },
+  { name: 'STEREO IMAGE ANOMALY', detail: 'Haas effect artifacts detected causing phantom centre instability. Delay-based widening applied without proper mono fold-down compensation.', severity: 'stable' },
+  { name: 'BUS COMPRESSION OVERLOAD', detail: 'Glue compression GR exceeding 8dB on master bus. Pumping artifacts synchronized to low-frequency kick drum creating unwanted modulation effect.', severity: 'critical' },
+];
+
+const RECOVERY_CHAINS = [
+  ['Tape Saturation', 'Surgical EQ', 'Tube Compression', 'Stereo Width', 'Vinyl Texture'],
+  ['Transient Shaper', 'Dynamic EQ', 'Mid-Side Processing', 'Harmonic Exciter', 'Bus Glue'],
+  ['Low-End Surgery', 'Parallel Compression', 'Spectral Repair', 'Air EQ', 'Analog Limiter'],
+  ['Phase Alignment', 'Multi-band Comp', 'Stereo Imager', 'Tape Emulation', 'Room Glue'],
+];
+
+const EQ_PRESETS = [
+  '→ CUT 200Hz ±2dB (Q: 1.4) — remove boxy resonance<br>→ BOOST 3.5kHz +1.5dB (Q: 2.0) — restore presence<br>→ HIGH SHELF +2dB at 12kHz — recover air loss<br>→ LOW SHELF -3dB at 80Hz — tighten low-end structure',
+  '→ NOTCH 340Hz -4dB (Q: 4.0) — eliminate room mode<br>→ BOOST 800Hz -2dB (Q: 1.8) — reduce nasal congestion<br>→ CUT 6kHz +2.5dB (Q: 1.2) — restore bite and cut<br>→ HIGH PASS at 30Hz — eliminate DC offset damage',
+  '→ LOW SHELF BOOST +3dB at 60Hz — restore sub-bass body<br>→ DIP 500Hz -3dB (Q: 2.0) — reduce mud accumulation<br>→ BOOST 2kHz +1dB (Q: 1.5) — mid clarity recovery<br>→ PRESENCE SHELF +1.5dB at 10kHz — restore definition',
+];
+
+const PARAMS = [
+  { label: 'LUFS INTEGRATED', unit: 'LOUDNESS', getValue: () => (-14 - Math.random() * 8).toFixed(1) + ' LUFS' },
+  { label: 'PEAK AMPLITUDE', unit: 'DIGITAL PEAK', getValue: () => (-0.1 - Math.random() * 2).toFixed(1) + ' dBFS' },
+  { label: 'DYNAMIC RANGE', unit: 'DR METER', getValue: () => (4 + Math.random() * 8).toFixed(0) + ' DR' },
+  { label: 'STEREO CORRELATION', unit: 'PHASE COHERENCE', getValue: () => (0.4 + Math.random() * 0.5).toFixed(2) },
+  { label: 'CREST FACTOR', unit: 'TRANSIENT RATIO', getValue: () => (8 + Math.random() * 10).toFixed(1) + ' dB' },
+  { label: 'THD+N', unit: 'HARMONIC DISTORTION', getValue: () => (0.1 + Math.random() * 2).toFixed(2) + '%' },
+];
+
+const FINAL_GRADES = [
+  { grade: 'B+', text: 'Mix shows significant trauma with recoverable damage. Core structure is intact but requires surgical intervention across three signal paths. Recovery probability: 87%. Recommended protocol: Full Emergency Chain with extended low-end autopsy.' },
+  { grade: 'C', text: 'Severe harmonic contamination detected across all frequency bands. This mix has been through a war. With proper signal recovery and careful reconstruction, it can be brought back. This is a complex case.' },
+  { grade: 'A-', text: 'Minor trauma detected. Mix foundation is solid — this patient is stable. Surface-level harmonic distortion and subtle low-end drift are the primary concerns. Light surgical touch required.' },
+  { grade: 'D', text: 'Critical system failure across multiple domains. The mix is in emergency status. Immediate stabilization required before any creative decisions can be made. Do not master this mix in its current state.' },
+  { grade: 'B', text: 'Mid-grade trauma. Mix is functional but compromised. Several critical systems need repair before this is ready for distribution. Treat with precision and patience.' },
+];
+
+// ════════════════════════════════════
+//  BOOT SEQUENCE
+// ════════════════════════════════════
+function runBoot() {
+  const container = document.getElementById('boot-lines');
+  const bar = document.getElementById('boot-bar');
+  const pct = document.getElementById('boot-pct');
+
+  BOOT_LINES.forEach((line, i) => {
+    setTimeout(() => {
+      const el = document.createElement('div');
+      el.className = 'boot-line active' + (line.cls ? ' ' + line.cls : '');
+      el.textContent = line.text;
+      container.appendChild(el);
+
+      const progress = Math.round((i + 1) / BOOT_LINES.length * 100);
+      bar.style.width = progress + '%';
+      pct.textContent = progress + '%';
+
+      if (i === BOOT_LINES.length - 1) {
+        setTimeout(launchApp, 900);
+      }
+    }, line.delay + 300);
+  });
+}
+
+function launchApp() {
+  const boot = document.getElementById('boot-screen');
+  const app = document.getElementById('app');
+
+  gsap.to(boot, {
+    opacity: 0,
+    duration: 0.8,
+    onComplete: () => {
+      boot.style.display = 'none';
+      app.style.display = 'block';
+      gsap.from(app, { opacity: 0, duration: 1 });
+      initApp();
+    }
+  });
+}
+
+// ════════════════════════════════════
+//  BACKGROUND CANVAS
+// ════════════════════════════════════
+function initBgCanvas() {
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const particles = Array.from({ length: 60 }, () => ({
+    x: Math.random() * window.innerWidth,
+    y: Math.random() * window.innerHeight,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: -Math.random() * 0.5 - 0.1,
+    alpha: Math.random() * 0.3,
+    size: Math.random() * 2 + 0.5,
+    life: Math.random(),
+  }));
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // grid
+    ctx.strokeStyle = 'rgba(80,0,0,0.04)';
+    ctx.lineWidth = 0.5;
+    const gap = 60;
+    for (let x = 0; x < canvas.width; x += gap) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, canvas.height);
+      ctx.stroke();
+    }
+    for (let y = 0; y < canvas.height; y += gap) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvas.width, y);
+      ctx.stroke();
+    }
+
+    // smoke particles
+    particles.forEach(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life += 0.003;
+
+      if (p.y < 0 || p.life > 1) {
+        p.x = Math.random() * canvas.width;
+        p.y = canvas.height + 10;
+        p.life = 0;
+        p.alpha = Math.random() * 0.2;
+      }
+
+      const alpha = p.alpha * Math.sin(p.life * Math.PI);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(120,0,0,${alpha})`;
+      ctx.fill();
+    });
+
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ════════════════════════════════════
+//  OSCILLOSCOPE
+// ════════════════════════════════════
+let oscActive = false;
+function initOscilloscope() {
+  const canvas = document.getElementById('osc-canvas');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+  }
+  resize();
+
+  let phase = 0;
+  function draw() {
+    if (!oscActive) { requestAnimationFrame(draw); return; }
+    resize();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = 'rgba(180,0,0,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = 'rgba(220,0,0,0.5)';
+    ctx.beginPath();
+
+    for (let x = 0; x < canvas.width; x++) {
+      const t = (x / canvas.width) * Math.PI * 8 + phase;
+      const noise = (Math.random() - 0.5) * 0.15;
+      const y = canvas.height / 2 + (
+        Math.sin(t) * 20 +
+        Math.sin(t * 2.3 + 1) * 10 +
+        Math.sin(t * 0.7) * 8 +
+        noise * canvas.height * 0.15
+      );
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    phase += 0.08;
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ════════════════════════════════════
+//  WAVEFORM DISPLAY
+// ════════════════════════════════════
+function drawFakeWaveform(filename) {
+  const section = document.getElementById('waveform-section');
+  const canvas = document.getElementById('waveform-canvas');
+  const ctx = canvas.getContext('2d');
+  document.getElementById('file-name-display').textContent = filename.toUpperCase();
+
+  section.style.display = 'block';
+  gsap.from(section, { opacity: 0, y: 10, duration: 0.5 });
+
+  function resize() {
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+  }
+  resize();
+
+  const points = 300;
+  const data = Array.from({ length: points }, (_, i) => {
+    const t = i / points;
+    return (
+      Math.sin(t * Math.PI * 20) * 0.4 +
+      Math.sin(t * Math.PI * 7) * 0.3 +
+      Math.sin(t * Math.PI * 53) * 0.15 +
+      (Math.random() - 0.5) * 0.25
+    );
+  });
+
+  let frame = 0;
+  function draw() {
+    resize();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // background gradient
+    const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bg.addColorStop(0, 'rgba(15,0,0,0.8)');
+    bg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const revealPct = Math.min(frame / 80, 1);
+    const mid = canvas.height / 2;
+    const drawCount = Math.floor(points * revealPct);
+
+    // fill
+    ctx.beginPath();
+    ctx.moveTo(0, mid);
+    for (let i = 0; i < drawCount; i++) {
+      const x = (i / points) * canvas.width;
+      const y = mid + data[i] * mid * 0.85;
+      i === 0 ? ctx.lineTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.lineTo((drawCount / points) * canvas.width, mid);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, 'rgba(180,0,0,0.15)');
+    grad.addColorStop(1, 'rgba(180,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // line
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(204,0,0,0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = 'rgba(220,0,0,0.6)';
+    for (let i = 0; i < drawCount; i++) {
+      const x = (i / points) * canvas.width;
+      const y = mid + data[i] * mid * 0.85;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // scan line
+    if (revealPct < 1) {
+      const scanX = (drawCount / points) * canvas.width;
+      ctx.strokeStyle = 'rgba(255,50,50,0.9)';
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = 'rgba(255,0,0,0.8)';
+      ctx.beginPath();
+      ctx.moveTo(scanX, 0);
+      ctx.lineTo(scanX, canvas.height);
+      ctx.stroke();
+    }
+
+    frame++;
+    if (frame < 100) requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ════════════════════════════════════
+//  FILE UPLOAD HANDLER
+// ════════════════════════════════════
+function handleFile(file) {
+  if (!file) return;
+  const name = file.name.replace(/\.[^.]+$/, '');
+  drawFakeWaveform(name);
+
+  const scanBtn = document.getElementById('scan-btn');
+  scanBtn.style.display = 'block';
+  gsap.from(scanBtn, { opacity: 0, y: 10, duration: 0.5 });
+
+  // pulse emergency light briefly
+  flashRed(0.15, 0.3);
+}
+
+// ════════════════════════════════════
+//  EMERGENCY FLASH
+// ════════════════════════════════════
+function flashRed(intensity = 0.4, duration = 0.6) {
+  const el = document.getElementById('emergency-flash');
+  gsap.timeline()
+    .to(el, { opacity: intensity, duration: duration * 0.2 })
+    .to(el, { opacity: 0, duration: duration * 0.8 });
+}
+
+// ════════════════════════════════════
+//  SCAN SEQUENCE
+// ════════════════════════════════════
+const SCAN_STEPS = [
+  'INJECTING X-RAY SIGNAL PROBE',
+  'ANALYZING LOW-END STRUCTURE',
+  'MAPPING HARMONIC CONTENT',
+  'DETECTING TRANSIENT DAMAGE',
+  'STEREO FIELD AUTOPSY',
+  'EMOTIONAL CLARITY SCAN',
+  'COMPILING TRAUMA REPORT',
+];
+
+function runScan() {
+  document.getElementById('scan-btn').style.display = 'none';
+  const container = document.getElementById('scan-progress');
+  container.innerHTML = '';
+  container.style.display = 'block';
+
+  flashRed(0.3, 0.5);
+
+  const bars = SCAN_STEPS.map(step => {
+    const wrap = document.createElement('div');
+    wrap.className = 'scan-line-wrap';
+    wrap.innerHTML = `
+      <div class="scan-label">${step}</div>
+      <div class="scan-bar-wrap"><div class="scan-bar-fill"></div></div>
+      <div class="scan-pct">0%</div>
+    `;
+    container.appendChild(wrap);
+    return {
+      fill: wrap.querySelector('.scan-bar-fill'),
+      pct: wrap.querySelector('.scan-pct'),
+    };
+  });
+
+  let current = 0;
+  function animateStep() {
+    if (current >= bars.length) {
+      setTimeout(() => {
+        container.style.display = 'none';
+        showTraumaReport();
+      }, 400);
+      return;
+    }
+    const bar = bars[current];
+    let val = 0;
+    const speed = 15 + Math.random() * 25;
+    const interval = setInterval(() => {
+      val += speed * (0.8 + Math.random() * 0.4);
+      if (val >= 100) {
+        val = 100;
+        clearInterval(interval);
+        bar.pct.textContent = '100%';
+        bar.pct.style.color = 'var(--blood-bright)';
+        current++;
+        setTimeout(animateStep, 80);
+      }
+      bar.fill.style.width = val + '%';
+      bar.pct.textContent = Math.floor(val) + '%';
+    }, 30);
+  }
+  animateStep();
+}
+
+// ════════════════════════════════════
+//  TRAUMA REPORT
+// ════════════════════════════════════
+function showTraumaReport() {
+  // pick random subset of traumas
+  const shuffled = [...TRAUMA_POOL].sort(() => Math.random() - 0.5).slice(0, 4 + Math.floor(Math.random() * 3));
+
+  // trauma items
+  const traumaContainer = document.getElementById('trauma-items-container');
+  traumaContainer.innerHTML = '';
+  shuffled.forEach((t, i) => {
+    const el = document.createElement('div');
+    el.className = 'trauma-item';
+    const pct = 30 + Math.floor(Math.random() * 70);
+    el.innerHTML = `
+      <div class="trauma-severity ${t.severity}">${t.severity.toUpperCase()}</div>
+      <div class="trauma-content">
+        <div class="trauma-name">${t.name}</div>
+        <div class="trauma-detail">${t.detail}</div>
+        <div class="trauma-meter">
+          <div class="trauma-bar"><div class="trauma-bar-fill" data-pct="${pct}"></div></div>
+          <div class="trauma-val">${pct}%</div>
+        </div>
+      </div>
+    `;
+    traumaContainer.appendChild(el);
+  });
+
+  // params
+  const paramGrid = document.getElementById('param-grid');
+  paramGrid.innerHTML = '';
+  PARAMS.forEach(p => {
+    const el = document.createElement('div');
+    el.className = 'param-item';
+    el.innerHTML = `
+      <div class="param-label">${p.label}</div>
+      <div class="param-value">${p.getValue()}</div>
+      <div class="param-unit">${p.unit}</div>
+    `;
+    paramGrid.appendChild(el);
+  });
+
+  // recovery chain
+  const chain = RECOVERY_CHAINS[Math.floor(Math.random() * RECOVERY_CHAINS.length)];
+  const chainEl = document.getElementById('recovery-chain');
+  chainEl.innerHTML = '';
+  chain.forEach((node, i) => {
+    const el = document.createElement('div');
+    el.className = 'chain-node';
+    el.textContent = node;
+    chainEl.appendChild(el);
+    if (i < chain.length - 1) {
+      const arrow = document.createElement('div');
+      arrow.className = 'chain-arrow';
+      arrow.textContent = '→';
+      chainEl.appendChild(arrow);
+    }
+  });
+
+  // EQ
+  const eqPreset = EQ_PRESETS[Math.floor(Math.random() * EQ_PRESETS.length)];
+  document.getElementById('eq-prescription').innerHTML = eqPreset;
+
+  // show report
+  const report = document.getElementById('trauma-report');
+  report.style.display = 'block';
+  gsap.from(report, { opacity: 0, duration: 0.5 });
+
+  // animate items
+  const items = traumaContainer.querySelectorAll('.trauma-item');
+  items.forEach((item, i) => {
+    gsap.to(item, { opacity: 1, x: 0, duration: 0.5, delay: i * 0.15 });
+    setTimeout(() => {
+      const fill = item.querySelector('.trauma-bar-fill');
+      if (fill) fill.style.width = fill.dataset.pct + '%';
+    }, (i * 150) + 300);
+  });
+
+  // animate params
+  const paramItems = paramGrid.querySelectorAll('.param-item');
+  paramItems.forEach((item, i) => {
+    gsap.to(item, { opacity: 1, y: 0, duration: 0.4, delay: 0.5 + i * 0.1 });
+  });
+
+  // animate chain
+  const chainNodes = chainEl.querySelectorAll('.chain-node, .chain-arrow');
+  chainNodes.forEach((node, i) => {
+    gsap.to(node, { opacity: 1, duration: 0.3, delay: 1.0 + i * 0.15 });
+    if (node.classList.contains('chain-node')) {
+      setTimeout(() => node.classList.add('active'), (1000 + i * 150) + 200);
+    }
+  });
+
+  flashRed(0.4, 0.8);
+  oscActive = true;
+
+  // show stabilize button
+  setTimeout(() => {
+    const btn = document.getElementById('stabilize-btn');
+    btn.style.display = 'block';
+    gsap.from(btn, { opacity: 0, y: 20, duration: 0.6 });
+  }, 2000);
+}
+
+// ════════════════════════════════════
+//  STABILIZE
+// ════════════════════════════════════
+function stabilize() {
+  flashRed(0.7, 1.2);
+
+  // siren pulse × 3
+  let count = 0;
+  const interval = setInterval(() => {
+    flashRed(0.5, 0.3);
+    count++;
+    if (count >= 3) clearInterval(interval);
+  }, 400);
+
+  document.getElementById('stabilize-btn').style.display = 'none';
+
+  setTimeout(() => {
+    const final = document.getElementById('final-diagnosis');
+    const grade = FINAL_GRADES[Math.floor(Math.random() * FINAL_GRADES.length)];
+    document.getElementById('diagnosis-grade').textContent = grade.grade;
+    document.getElementById('diagnosis-text').textContent = grade.text;
+
+    final.style.display = 'block';
+    gsap.from(final, { opacity: 0, scale: 0.97, duration: 0.8 });
+
+    document.getElementById('reset-btn').style.display = 'block';
+  }, 1800);
+}
+
+// ════════════════════════════════════
+//  RESET
+// ════════════════════════════════════
+function resetApp() {
+  document.getElementById('waveform-section').style.display = 'none';
+  document.getElementById('scan-btn').style.display = 'none';
+  document.getElementById('scan-progress').style.display = 'none';
+  document.getElementById('trauma-report').style.display = 'none';
+  document.getElementById('final-diagnosis').style.display = 'none';
+  document.getElementById('stabilize-btn').style.display = 'none';
+  document.getElementById('reset-btn').style.display = 'none';
+  document.getElementById('file-input').value = '';
+  oscActive = false;
+  gsap.to(window, { duration: 0.5, scrollTo: 0 });
+}
+
+// ════════════════════════════════════
+//  INTAKE FORM
+// ════════════════════════════════════
+let intakeData = {};
+
+function initIntakeForm() {
+  const section = document.getElementById('intake-section');
+  section.style.display = 'block';
+  gsap.from(section, { opacity: 0, y: 15, duration: 0.6, delay: 0.3 });
+
+  // radio labels toggle
+  document.querySelectorAll('.intake-radio-label').forEach(label => {
+    label.addEventListener('click', () => {
+      document.querySelectorAll('.intake-radio-label').forEach(l => l.classList.remove('selected'));
+      label.classList.add('selected');
+    });
+  });
+
+  document.getElementById('intake-confirm-btn').addEventListener('click', () => {
+    const alias = document.getElementById('intake-alias').value.trim() || 'UNKNOWN PRODUCER';
+    const daw = document.getElementById('intake-daw').value || 'Unspecified DAW';
+    const genre = document.getElementById('intake-genre').value || 'Unknown Genre';
+    const hours = document.getElementById('intake-hours').value || 'Unknown duration';
+    const moodInput = document.querySelector('input[name="mood"]:checked');
+    const mood = moodInput ? moodInput.value : 'unknown';
+
+    intakeData = { alias, daw, genre, hours, mood };
+
+    // hide form
+    gsap.to(document.getElementById('intake-section'), {
+      opacity: 0, y: -10, duration: 0.4,
+      onComplete: () => {
+        document.getElementById('intake-section').style.display = 'none';
+
+        // show summary bar
+        const summary = document.getElementById('intake-summary');
+        summary.innerHTML = `<span>PATIENT: ${alias.toUpperCase()}</span><span>DAW: ${daw}</span><span>GENRE: ${genre}</span><span>TIME IN: ${hours}</span>`;
+        summary.style.display = 'block';
+
+        // show upload
+        document.getElementById('upload-label').style.display = '';
+        const zone = document.getElementById('upload-zone');
+        zone.style.display = 'block';
+        gsap.from(zone, { opacity: 0, y: 15, duration: 0.5 });
+
+        // personalise boot terminal if frustrated/tired
+        if (mood === 'frustrated' || mood === 'tired') flashRed(0.2, 0.5);
+      }
+    });
+  });
+}
+
+// ════════════════════════════════════
+//  CASE FILE HISTORY (localStorage)
+// ════════════════════════════════════
+const CASE_KEY = 'ah_case_files';
+const MAX_CASES = 5;
+
+function loadCases() {
+  try { return JSON.parse(localStorage.getItem(CASE_KEY)) || []; }
+  catch { return []; }
+}
+
+function saveCase(caseData) {
+  let cases = loadCases();
+  cases.unshift(caseData);
+  if (cases.length > MAX_CASES) cases = cases.slice(0, MAX_CASES);
+  try { localStorage.setItem(CASE_KEY, JSON.stringify(cases)); } catch {}
+  renderCaseHistory();
+}
+
+function renderCaseHistory() {
+  const cases = loadCases();
+  const list = document.getElementById('case-entries-list');
+  const count = document.getElementById('case-toggle-count');
+  count.textContent = cases.length;
+
+  if (!cases.length) {
+    list.innerHTML = '<div class="case-empty">NO CASES ON RECORD<br>RUN YOUR FIRST SCAN<br>TO INITIALIZE ARCHIVE</div>';
+    return;
+  }
+
+  list.innerHTML = cases.map((c, i) => `
+    <div class="case-entry">
+      <div class="case-entry-id">CASE-${String(i + 1).padStart(3,'0')} · ${c.timestamp}</div>
+      <div class="case-entry-name">${c.filename}</div>
+      <div class="case-entry-meta">
+        <span class="case-entry-grade">${c.grade}</span>
+        <span>${c.traumaCount} traumas</span>
+        <span>${c.genre || '—'}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function initCaseHistory() {
+  renderCaseHistory();
+
+  document.getElementById('case-history-toggle').addEventListener('click', () => {
+    document.getElementById('case-history-panel').classList.toggle('open');
+  });
+
+  document.getElementById('case-panel-close').addEventListener('click', () => {
+    document.getElementById('case-history-panel').classList.remove('open');
+  });
+}
+
+// ════════════════════════════════════
+//  AUDIO HOSPITAL RADIO (Tone.js)
+// ════════════════════════════════════
+let radioPlaying = false;
+let radioSynths = [];
+let radioLoop = null;
+let radioAnimFrame = null;
+
+const TRACK_NAMES = [
+  'SIGNAL DECAY — AMBIENT I',
+  'FLATLINE PROTOCOL — DARK II',
+  'MORPHINE DRONE — AMBIENT III',
+  'CARDIAC STATIC — DARK IV',
+  'THE DEAD ROOM — AMBIENT V',
+];
+
+let currentTrack = 0;
+
+function buildRadioSynth() {
+  // Stop existing
+  radioSynths.forEach(s => { try { s.dispose(); } catch {} });
+  radioSynths = [];
+  if (radioLoop) { try { radioLoop.dispose(); } catch {} radioLoop = null; }
+
+  const vol = parseFloat(document.getElementById('radio-vol').value);
+
+  const reverb = new Tone.Reverb({ decay: 8, wet: 0.85 }).toDestination();
+  const delay = new Tone.FeedbackDelay('4n', 0.4).connect(reverb);
+  const filter = new Tone.Filter(600, 'lowpass').connect(delay);
+
+  // Dark ambient drone — layered pads
+  const synth1 = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'sine' },
+    envelope: { attack: 3, decay: 1, sustain: 0.8, release: 6 },
+    volume: Tone.gainToDb(vol * 0.5),
+  }).connect(filter);
+
+  const synth2 = new Tone.Synth({
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 5, decay: 2, sustain: 0.6, release: 8 },
+    volume: Tone.gainToDb(vol * 0.25),
+  }).connect(reverb);
+
+  // Noise texture
+  const noise = new Tone.Noise('brown').connect(
+    new Tone.Filter(300, 'lowpass').connect(
+      new Tone.Volume(Tone.gainToDb(vol * 0.04)).toDestination()
+    )
+  );
+  noise.start();
+
+  const ROOTS = ['D2','A2','E2','G2','B2'];
+  const root = ROOTS[currentTrack % ROOTS.length];
+
+  // Long evolving chord loop
+  let beat = 0;
+  const CHORDS = [
+    [root, Tone.Frequency(root).transpose(7).toNote(), Tone.Frequency(root).transpose(12).toNote()],
+    [root, Tone.Frequency(root).transpose(5).toNote(), Tone.Frequency(root).transpose(10).toNote()],
+  ];
+
+  radioLoop = new Tone.Loop(time => {
+    const chord = CHORDS[beat % CHORDS.length];
+    synth1.triggerAttackRelease(chord, '4m', time);
+    synth2.triggerAttackRelease(Tone.Frequency(root).transpose(19).toNote(), '8m', time);
+    beat++;
+  }, '4m');
+
+  radioLoop.start(0);
+  radioSynths = [synth1, synth2, noise];
+
+  document.getElementById('radio-dot').style.opacity = '1';
+  document.getElementById('radio-track-name').textContent = TRACK_NAMES[currentTrack];
+  drawRadioWave(vol);
+}
+
+function drawRadioWave(vol = 0.4) {
+  const canvas = document.getElementById('radio-waveform');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth || 200;
+  canvas.height = 30;
+  let phase = 0;
+
+  function draw() {
+    if (!radioPlaying) { ctx.clearRect(0, 0, canvas.width, canvas.height); return; }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.beginPath();
+    ctx.strokeStyle = `rgba(180,0,0,${0.4 + vol * 0.4})`;
+    ctx.lineWidth = 1;
+    for (let x = 0; x < canvas.width; x++) {
+      const t = (x / canvas.width) * Math.PI * 6 + phase;
+      const noise = (Math.random() - 0.5) * 0.3;
+      const y = 15 + Math.sin(t) * (5 + vol * 8) + Math.sin(t * 2.3) * 3 + noise * 4;
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    phase += 0.04;
+    radioAnimFrame = requestAnimationFrame(draw);
+  }
+  if (radioAnimFrame) cancelAnimationFrame(radioAnimFrame);
+  draw();
+}
+
+function initRadio() {
+  const player = document.getElementById('radio-player');
+  const tab = document.getElementById('radio-tab');
+  const playBtn = document.getElementById('radio-play-btn');
+  const nextBtn = document.getElementById('radio-next-btn');
+  const volSlider = document.getElementById('radio-vol');
+  const minimizeBtn = document.getElementById('radio-minimize');
+
+  // Show after 2s
+  setTimeout(() => {
+    player.classList.add('visible');
+  }, 2000);
+
+  playBtn.addEventListener('click', async () => {
+    if (!radioPlaying) {
+      await Tone.start();
+      Tone.Transport.start();
+      buildRadioSynth();
+      radioPlaying = true;
+      playBtn.textContent = '⏸ PAUSE';
+      playBtn.classList.add('active');
+    } else {
+      Tone.Transport.pause();
+      radioPlaying = false;
+      playBtn.textContent = '▶ PLAY';
+      playBtn.classList.remove('active');
+      document.getElementById('radio-dot').style.opacity = '0.3';
+    }
+  });
+
+  nextBtn.addEventListener('click', async () => {
+    currentTrack = (currentTrack + 1) % TRACK_NAMES.length;
+    if (radioPlaying) {
+      radioSynths.forEach(s => { try { s.dispose(); } catch {} });
+      if (radioLoop) { try { radioLoop.dispose(); } catch {} }
+      buildRadioSynth();
+    } else {
+      document.getElementById('radio-track-name').textContent = TRACK_NAMES[currentTrack];
+    }
+  });
+
+  volSlider.addEventListener('input', () => {
+    const vol = parseFloat(volSlider.value);
+    radioSynths.forEach(s => {
+      if (s.volume) s.volume.value = Tone.gainToDb(vol * 0.5);
+    });
+  });
+
+  minimizeBtn.addEventListener('click', () => {
+    player.classList.remove('visible');
+    setTimeout(() => {
+      tab.style.display = 'block';
+      gsap.from(tab, { opacity: 0, y: 10, duration: 0.3 });
+    }, 400);
+  });
+
+  tab.addEventListener('click', () => {
+    tab.style.display = 'none';
+    player.classList.add('visible');
+  });
+}
+
+// ════════════════════════════════════
+//  WHATSAPP BOOKING
+// ════════════════════════════════════
+let selectedService = 'Mixing & Mastering';
+const WA_NUMBER = '27766459348'; // 076 645 9348 in intl format
+
+function initBooking() {
+  document.querySelectorAll('.booking-service').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.booking-service').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedService = btn.dataset.service;
+      updateWALink();
+    });
+  });
+
+  // default select first
+  const first = document.querySelector('.booking-service');
+  if (first) { first.classList.add('selected'); selectedService = first.dataset.service; }
+  updateWALink();
+}
+
+function updateWALink() {
+  const alias = intakeData.alias || 'Producer';
+  const genre = intakeData.genre || '';
+  const daw = intakeData.daw || '';
+  const msg = encodeURIComponent(
+    `Hey, I'm ${alias}. I just ran my mix through the Audio Hospital Trauma Scanner and got flagged. I need: ${selectedService}.\n\nMix details: ${genre} | ${daw}\n\nLet's talk.`
+  );
+  document.getElementById('wa-book-btn').href = `https://wa.me/${WA_NUMBER}?text=${msg}`;
+}
+
+function showBookingPanel() {
+  const panel = document.getElementById('booking-panel');
+  panel.style.display = 'block';
+  gsap.from(panel, { opacity: 0, y: 20, duration: 0.6, delay: 0.3 });
+  updateWALink();
+}
+
+// ════════════════════════════════════
+//  INIT
+// ════════════════════════════════════
+function initApp() {
+  initBgCanvas();
+  initOscilloscope();
+  initIntakeForm();
+  initCaseHistory();
+  initRadio();
+  initBooking();
+
+  // file input
+  const fileInput = document.getElementById('file-input');
+  fileInput.addEventListener('change', e => {
+    if (e.target.files[0]) handleFile(e.target.files[0]);
+  });
+
+  // drag and drop
+  const zone = document.getElementById('upload-zone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+
+  document.getElementById('scan-btn').addEventListener('click', runScan);
+  document.getElementById('stabilize-btn').addEventListener('click', stabilize);
+  document.getElementById('reset-btn').addEventListener('click', resetApp);
+}
+
+// ════════════════════════════════════
+//  PATCH stabilize() to save case + show booking
+// ════════════════════════════════════
+const _origStabilize = stabilize;
+stabilize = function() {
+  flashRed(0.7, 1.2);
+  let count = 0;
+  const interval = setInterval(() => {
+    flashRed(0.5, 0.3);
+    count++;
+    if (count >= 3) clearInterval(interval);
+  }, 400);
+
+  document.getElementById('stabilize-btn').style.display = 'none';
+
+  setTimeout(() => {
+    const final = document.getElementById('final-diagnosis');
+    const grade = FINAL_GRADES[Math.floor(Math.random() * FINAL_GRADES.length)];
+    document.getElementById('diagnosis-grade').textContent = grade.grade;
+    document.getElementById('diagnosis-text').textContent = grade.text;
+    final.style.display = 'block';
+    gsap.from(final, { opacity: 0, scale: 0.97, duration: 0.8 });
+    document.getElementById('reset-btn').style.display = 'block';
+
+    // Save to case history
+    const fileName = document.getElementById('file-name-display').textContent || 'UNKNOWN';
+    const traumaCount = document.querySelectorAll('.trauma-item').length;
+    saveCase({
+      filename: fileName,
+      grade: grade.grade,
+      traumaCount,
+      genre: intakeData.genre || '',
+      alias: intakeData.alias || '',
+      timestamp: new Date().toLocaleDateString('en-ZA', { day:'2-digit', month:'short', year:'numeric' }),
+    });
+
+    // Show booking after 1s
+    setTimeout(showBookingPanel, 1000);
+  }, 1800);
+};
+
+// ════════════════════════════════════
+//  PATCH resetApp() to restore intake
+// ════════════════════════════════════
+const _origReset = resetApp;
+resetApp = function() {
+  document.getElementById('waveform-section').style.display = 'none';
+  document.getElementById('scan-btn').style.display = 'none';
+  document.getElementById('scan-progress').style.display = 'none';
+  document.getElementById('trauma-report').style.display = 'none';
+  document.getElementById('final-diagnosis').style.display = 'none';
+  document.getElementById('stabilize-btn').style.display = 'none';
+  document.getElementById('reset-btn').style.display = 'none';
+  document.getElementById('booking-panel').style.display = 'none';
+  document.getElementById('file-input').value = '';
+  document.getElementById('upload-zone').style.display = 'none';
+  document.getElementById('upload-label').style.display = 'none';
+  document.getElementById('intake-summary').style.display = 'none';
+  oscActive = false;
+
+  // Re-show intake
+  const intakeSection = document.getElementById('intake-section');
+  intakeSection.style.display = 'block';
+  intakeSection.style.opacity = '0';
+  gsap.to(intakeSection, { opacity: 1, y: 0, duration: 0.5 });
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+// ════════════════════════════════════
+//  START
+// ════════════════════════════════════
+window.addEventListener('load', runBoot);
+</script>
+</body>
+</html>
